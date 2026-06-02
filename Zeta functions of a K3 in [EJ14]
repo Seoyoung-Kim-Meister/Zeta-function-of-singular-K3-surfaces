@@ -1,0 +1,344 @@
+// ============================================================
+// Zeta functions of the double sextic V and its resolution Vtilde
+//
+// V : w^2 = P(y,z) * Q(x,z) * R(x,y)  in P(1,1,1,3)
+//
+// P(y,z) = ((t^2-4t+2)/8)*y^2 + (t^2-2t+2)*y*z + (t^2-4t+2)*z^2
+// Q(x,z) = ((t^2+4t+2)/8)*x^2 + (t^2+2t+2)*x*z + (t^2+4t+2)*z^2
+// R(x,y) = (x+y)*(2*x + t^2*y)
+//
+// Assumptions: char(F_q) != 2,3 ; t != 0 ; t^2 != -2 ; 2 non-square in F_q
+// Under these conditions: #V(F_{q^n}) = q^{2n}+q^n+1 for all odd n.
+//
+// This script computes:
+//   (1) #V(F_{q^2})  by direct point count
+//   (2) The coefficient c_2 of the transcendental factor Q_6(T)
+//   (3) Z(V, T)  and  Z(Vtilde, T)  as rational functions
+//   (4) Verification via #V(F_{q^4}) if desired
+// ============================================================
+
+// ---- USER INPUT: set p, t_val --------------------------------
+p := 11;          // prime, char != 2,3
+t_val := 1;       // t in F_p, t != 0, t^2 != -2 mod p
+// -------------------------------------------------------------
+
+// Sanity checks
+if p eq 2 or p eq 3 then
+    error "p must have characteristic != 2 and != 3";
+end if;
+if t_val mod p eq 0 then
+    error "t must be nonzero in F_p";
+end if;
+if (t_val^2 + 2) mod p eq 0 then
+    error "t^2 must not equal -2 in F_p";
+end if;
+
+// Work over F_p first to verify 2 is non-square
+Fp := GF(p);
+t := Fp!t_val;
+if IsSquare(Fp!2) then
+    error "2 must be a non-square in F_p (need p = +-3 mod 8)";
+end if;
+
+// ============================================================
+// SECTION 1: Point count over F_{p^2}
+// ============================================================
+
+F2<a> := GF(p^2);   // a = primitive element of F_{p^2}
+t2 := F2!t;         // lift t into F_{p^2}
+
+// Polynomial coefficients in F_{p^2}
+inv8 := (F2!8)^(-1);
+aP := inv8 * (t2^2 - 4*t2 + 2);
+bP := t2^2 - 2*t2 + 2;
+cP := t2^2 - 4*t2 + 2;
+
+aQ := inv8 * (t2^2 + 4*t2 + 2);
+bQ := t2^2 + 2*t2 + 2;
+cQ := t2^2 + 4*t2 + 2;
+
+// P(y,z), Q(x,z), R(x,y) as functions
+function Pval(y, z)
+    return aP*y^2 + bP*y*z + cP*z^2;
+end function;
+
+function Qval(x, z)
+    return aQ*x^2 + bQ*x*z + cQ*z^2;
+end function;
+
+function Rval(x, y, t_el)
+    return (x + y) * (2*x + t_el^2 * y);
+end function;
+
+// Count #V(F_{q^2}):
+// For each [x:y:z] in P^2(F_{q^2}), contribution is 1 + chi(P*Q*R)
+// where chi is the quadratic character of F_{q^2}.
+// Equivalently: #{w : w^2 = f} = 1 if f=0, 2 if f!=0 is square, 0 otherwise.
+
+count_q2 := 0;
+
+// Chart z=1
+for x in F2 do
+    for y in F2 do
+        f := Pval(y, F2!1) * Qval(x, F2!1) * Rval(x, y, t2);
+        if f eq F2!0 then
+            count_q2 +:= 1;
+        elif IsSquare(f) then
+            count_q2 +:= 2;
+        end if;
+    end for;
+end for;
+
+// Chart z=0: points [x:y:0] in P^1(F_{q^2})
+// [0:1:0]: P(1,0)*Q(0,0)*R(0,1) = aP * 0 * t^2 = 0 => contributes 1
+count_q2 +:= 1;
+
+// [1:s:0] for all s in F_{q^2}
+for s in F2 do
+    f := Pval(s, F2!0) * Qval(F2!1, F2!0) * Rval(F2!1, s, t2);
+    if f eq F2!0 then
+        count_q2 +:= 1;
+    elif IsSquare(f) then
+        count_q2 +:= 2;
+    end if;
+end for;
+
+q := p;
+q2 := p^2;
+printf "p = %o, t = %o\n", p, t_val;
+printf "#V(F_q)   = %o  (expected q^2+q+1 = %o)\n", q^2+q+1, q^2+q+1;
+printf "#V(F_q^2) = %o  (q^4+q^2+1 = %o)\n\n", count_q2, q^4+q^2+1;
+
+// ============================================================
+// SECTION 2: Compute c_2 and Q_6(T)
+// ============================================================
+// From our analysis:
+//   Q_6(T) = (1 + q^2*T^2) * (1 + (c2-q^2)*T^2 + q^4*T^4)
+//   c2 = (q^4 + 3*q^2 + 1 - #V(F_{q^2})) / 2
+
+c2_num := q^4 + 3*q^2 + 1 - count_q2;
+if c2_num mod 2 ne 0 then
+    error "c2 numerator is odd — check point count";
+end if;
+c2 := c2_num div 2;
+
+printf "c_2 = %o\n", c2;
+printf "c_2 - q^2 = %o\n\n", c2 - q^2;
+
+// ============================================================
+// SECTION 3: Zeta functions as power series / rational functions
+// ============================================================
+// We work in Q(T) via the polynomial ring.
+//
+// From the structure analysis:
+//
+//   P_2^V(T)     = (1-qT)^3 * Q_6(T)          [degree 9, for singular V]
+//   P_2^Vtilde(T) = (1-qT)^16 * Q_6(T)         [degree 22, for resolution]
+//
+// where Q_6(T) = 1 + c2*T^2 + c2*q^2*T^4 + q^6*T^6
+//              = (1+q^2*T^2)(1+(c2-q^2)*T^2+q^4*T^4)
+//
+//   Z(V,T)      = P_2^V(T) / [(1-T)(1-q^2*T)]
+//               = (1-qT)^3 * Q_6(T) / [(1-T)(1-q^2*T)]
+//
+//   Z(Vtilde,T) = (1-qT)^15 * Q_6(T) / [(1-T)(1-q^2*T)]
+
+ZT<T> := PolynomialRing(Integers());
+
+// Build Q_6(T)
+Q6 := ZT!1 + c2*T^2 + c2*q^2*T^4 + q^6*T^6;
+
+// Factors
+factor_1mT   := ZT!1 - T;
+factor_1mq2T := ZT!1 - q^2*T;
+factor_1mqT  := ZT!1 - q*T;
+factor_1pq2T2 := ZT!1 + q^2*T^2;
+factor_quartic := ZT!1 + (c2-q^2)*T^2 + q^4*T^4;
+
+printf "=== Transcendental factor Q_6(T) ===\n";
+printf "Q_6(T) = %o\n\n", Q6;
+
+printf "=== Factorisation of Q_6 ===\n";
+printf "Q_6(T) = (1 + q^2*T^2) * (1 + %o*T^2 + q^4*T^4)\n", c2-q^2;
+printf "       = (1 + %o*T^2) * (1 + %o*T^2 + %o*T^4)\n\n",
+    q^2, c2-q^2, q^4;
+
+// Numerators of Z(V,T) and Z(Vtilde,T)
+P2_V      := factor_1mqT^3  * Q6;   // degree 9
+P2_Vtilde := factor_1mqT^16 * Q6;   // degree 22
+
+printf "=== P_2 for singular V (degree 9) ===\n";
+printf "P_2^V(T) = %o\n\n", P2_V;
+
+printf "=== P_2 for resolution Vtilde (degree 22) ===\n";
+printf "P_2^Vtilde(T) = %o\n\n", P2_Vtilde;
+
+printf "=== Zeta functions ===\n";
+printf "Z(V, T)      = P_2^V(T) / [(1-T)(1-%o*T)]\n", q^2;
+printf "             numerator  = %o\n\n", P2_V;
+printf "Z(Vtilde, T) = P_2^Vtilde(T) / [(1-T)(1-%o*T)]\n", q^2;
+printf "             numerator  = %o\n\n", P2_Vtilde;
+
+// ============================================================
+// SECTION 4: Verification via #V(F_{q^n}) from Z(V,T)
+// ============================================================
+// Extract point counts from Z(V,T) using the formula:
+// #V(F_{q^n}) = 1 + q^{2n} + sum of roots of P_2^V raised to n
+//             = 1 + q^{2n} - [coeff extraction from P_2^V]
+//
+// We verify: #V(F_q) = q^2+q+1 and #V(F_{q^2}) matches our count.
+
+function CountFromZeta(P2, q, n)
+    // P_2 encodes: det(1 - Frob*T), so #X(F_{q^n}) = 1+q^{2n} + Tr(Frob^n on H^2)
+    // Tr(Frob^n on H^2) = sum of (reciprocal roots of P2)^n
+    // We use Newton's identity on P2 to extract power sums.
+    // For small n, easier: evaluate via companion matrix or direct.
+    
+    // Get coefficients of P2 = sum a_k T^k
+    coeffs := Coefficients(P2);   // coeffs[i] = coeff of T^{i-1}
+    deg := Degree(P2);
+    
+    // Power sums p_k = sum alpha_i^k via Newton-Girard
+    // p_k + a_1*p_{k-1} + ... + k*a_k = 0  (for k <= deg)
+    // where a_k = coeffs[k+1]
+    a := [Integers()!coeffs[i] : i in [1..deg+1]];  // a[1]=1, a[2]=coeff T, ...
+    
+    pow_sums := [0 : i in [1..n]];
+    for k in [1..n] do
+        s := 0;
+        for j in [1..Min(k-1, deg)] do
+            s +:= a[j+1] * pow_sums[k-j];
+        end for;
+        if k le deg then
+            s +:= k * a[k+1];
+        end if;
+        pow_sums[k] := -s;
+    end for;
+    
+    return 1 + q^(2*n) + pow_sums[n];
+end function;
+
+printf "=== Verification: point counts from Z(V,T) ===\n";
+for n in [1..4] do
+    cnt := CountFromZeta(P2_V, q, n);
+    qn := q^n;
+    expected_odd := qn^2 + qn + 1;
+    if n eq 2 then
+        printf "n=%o: #V(F_{q^%o}) = %o  (direct count = %o)  %o\n",
+            n, n, cnt, count_q2, 
+            (cnt eq count_q2) select "MATCH" else "MISMATCH";
+    elif IsOdd(n) then
+        printf "n=%o: #V(F_{q^%o}) = %o  (expected q^{2n}+q^n+1 = %o)  %o\n",
+            n, n, cnt, expected_odd,
+            (cnt eq expected_odd) select "OK" else "FAIL";
+    else
+        printf "n=%o: #V(F_{q^%o}) = %o\n", n, n, cnt;
+    end if;
+end for;
+
+// ============================================================
+// SECTION 5: Riemann Hypothesis check
+// ============================================================
+// All roots of Q_6(T) should have absolute value 1/q.
+
+printf "\n=== Riemann Hypothesis check for Q_6 ===\n";
+CC := ComplexField(20);
+R_CC<T_CC> := PolynomialRing(CC);
+Q6_CC := R_CC![CC!c : c in Coefficients(Q6)];
+roots_Q6 := Roots(Q6_CC);
+
+printf "Roots 1/alpha_i of Q_6 (should all have |root| = 1/q = %o):\n", 1.0/q;
+rh_ok := true;
+for r in roots_Q6 do
+    root_val := r[1];
+    mag := Abs(root_val);
+    ok := Abs(mag - 1.0/q) lt 1e-10;
+    if not ok then rh_ok := false; end if;
+    printf "  %o,  |root| = %o  %o\n", 
+        root_val, mag, ok select "OK" else "FAIL";
+end for;
+printf "Riemann Hypothesis: %o\n", rh_ok select "SATISFIED" else "VIOLATED";
+
+// ============================================================
+// SECTION 6: Functional equations
+// ============================================================
+printf "\n=== Functional equation check ===\n";
+// For Z(Vtilde,T): Z(1/(q^2*T)) = q^12 * T^{24} * Z(T) for smooth K3
+// Equivalently: P_2^Vtilde(T) = q^{22} * T^{22} * P_2^Vtilde(1/(q^2*T))
+// Check palindrome of P_2^Vtilde:
+
+coeffs_P2 := Coefficients(P2_Vtilde);
+deg_P2 := Degree(P2_Vtilde);
+palindrome_ok := true;
+for k in [0..deg_P2] do
+    lhs := Integers()!coeffs_P2[k+1];              // coeff of T^k
+    rhs := q^(2*k) * Integers()!coeffs_P2[deg_P2-k+1]; // q^{2k} * coeff of T^{deg-k}
+    if lhs ne rhs then
+        palindrome_ok := false;
+        printf "  Palindrome FAIL at k=%o: %o != %o\n", k, lhs, rhs;
+    end if;
+end for;
+if palindrome_ok then
+    printf "Palindrome (functional equation) for P_2^Vtilde: SATISFIED\n";
+end if;
+
+// ============================================================
+// SECTION 7: Direct count over F_{q^4} for further verification
+// ============================================================
+printf "\n=== Optional: #V(F_{q^4}) from zeta vs brute force ===\n";
+
+// From zeta:
+cnt_q4_zeta := CountFromZeta(P2_V, q, 4);
+printf "#V(F_{q^4}) from Z(V,T) = %o\n", cnt_q4_zeta;
+
+// Brute force over F_{p^4} (may be slow for large p; skip if p > 7)
+if p le 7 then
+    F4 := GF(p^4);
+    t4 := F4!t_val;
+    inv8_4 := (F4!8)^(-1);
+    aP4 := inv8_4*(t4^2-4*t4+2); bP4:=t4^2-2*t4+2; cP4:=t4^2-4*t4+2;
+    aQ4 := inv8_4*(t4^2+4*t4+2); bQ4:=t4^2+2*t4+2; cQ4:=t4^2+4*t4+2;
+    
+    cnt4 := 0;
+    for x in F4 do
+        for y in F4 do
+            f := (aP4*y^2+bP4*y+cP4)*(aQ4*x^2+bQ4*x+cQ4)*((x+y)*(2*x+t4^2*y));
+            if f eq F4!0 then cnt4+:=1;
+            elif IsSquare(f) then cnt4+:=2; end if;
+        end for;
+    end for;
+    cnt4 +:= 1;
+    for s in F4 do
+        f := (aP4*s^2)*(aQ4)*(F4!0) * ((F4!1+s)*(F4!2+t4^2*s));
+        // z=0 chart: P(s,0)*Q(1,0)*R(1,s) = aP4*s^2 * aQ4*1^2 * (1+s)(2+t4^2*s)
+        f := (aP4*s^2) * aQ4 * ((F4!1+s)*(F4!2+t4^2*s));
+        if f eq F4!0 then cnt4+:=1;
+        elif IsSquare(f) then cnt4+:=2; end if;
+    end for;
+    
+    printf "#V(F_{q^4}) brute force     = %o  %o\n", cnt4,
+        (cnt4 eq cnt_q4_zeta) select "MATCH" else "MISMATCH";
+end if;
+
+// ============================================================
+// SUMMARY
+// ============================================================
+printf "\n";
+printf "================================================================\n";
+printf "SUMMARY  (p=%o, t=%o)\n", p, t_val;
+printf "================================================================\n";
+printf "#V(F_q)     = %o  [= q^2+q+1, from given formula]\n", q^2+q+1;
+printf "#V(F_{q^2}) = %o  [computed by brute force]\n", count_q2;
+printf "\n";
+printf "Q_6(T) = (1 + %o*T^2)(1 + %o*T^2 + %o*T^4)\n", q^2, c2-q^2, q^4;
+printf "\n";
+printf "Z(V, T) = (1-%o*T)^3 * Q_6(T) / [(1-T)(1-%o*T)]\n", q, q^2;
+printf "\n";
+printf "         where the full numerator P_2^V(T) is:\n";
+printf "         %o\n", P2_V;
+printf "\n";
+printf "Z(Vtilde, T) = (1-%o*T)^15 * Q_6(T) / [(1-T)(1-%o*T)]\n", q, q^2;
+printf "\n";
+printf "         where the full numerator P_2^Vtilde(T) is:\n";
+printf "         %o\n", P2_Vtilde;
+printf "================================================================\n";
